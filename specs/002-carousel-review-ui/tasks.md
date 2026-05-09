@@ -259,9 +259,13 @@ T045 ∥ T046 ∥ T047 ∥ T048 ∥ T049 ∥ T050 ∥ T051 ∥ T052 ∥ T053 ∥
 
 - [ ] T063 [P] Test unitario `frontend/tests/PhotoViewer.test.jsx` (extensión): con 11 fotos → muestra 10 slides + slide "1 foto más"; con 10 fotos → muestra 10 slides sin slide adicional; con 0 fotos → muestra placeholder
 
+### Documentación técnica
+
+- [ ] T064 [P] Actualizar `specs/002-carousel-review-ui/data-model.md §Cola de Revisión`: reflejar el filtro FR-016 (`LEFT JOIN product_images WHERE product_images.id IS NOT NULL`) en la definición formal de `ReviewQueue` y añadir la regla de desempate (`updated_at ASC` entre propuestas del mismo estado) *(ya actualizado en esta sesión de análisis; verificar que quede sincronizado con la implementación de T055)*
+
 ---
 
-## Dependency Graph (actualizado con T055–T063)
+## Dependency Graph (actualizado con T055–T064)
 
 ```
 [T001–T054 completados]
@@ -270,8 +274,9 @@ T055 → T056 (FR-016: queue sin fotos)
 T057 → T058 (FR-017: toast conflicto)
 T059 → T060 → T061 (FR-014: offline retry)
 T062 → T063 (CQR-006: max 10 fotos)
+T064 (documentación data-model, paralela a T055)
 
-T055, T057, T059, T062 pueden ejecutarse en paralelo entre sí
+T055, T057, T059, T062, T064 pueden ejecutarse en paralelo entre sí
 T060 depende de T059
 T056, T058, T061, T063 son tests de sus respectivas implementaciones
 ```

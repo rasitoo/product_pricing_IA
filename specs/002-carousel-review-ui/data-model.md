@@ -63,10 +63,11 @@
 
 ### Cola de Revisión (ReviewQueue)
 - Purpose: Vista ordenada de propuestas pendientes de revisión, sin tabla propia en base de datos.
-- Implementación: Consulta SQL sobre `AIProposal` + `Product` + `ReviewLock` con las siguientes reglas:
+- Implementación: Consulta SQL sobre `AIProposal` + `Product` + `ReviewLock` + `ProductImage` con las siguientes reglas:
   - Incluye propuestas donde `Product.status IN ('in_review')` y `PublicationDraft.status IN ('modified_pending_reapproval')` _(o bien propuestas sin PublicationDraft aún aprobada)_.
   - Excluye propuestas con `ReviewLock` activo para una `session_id` distinta a la del solicitante.
-  - Ordenación: `PublicationDraft.status = 'modified_pending_reapproval'` primero, luego `AIProposal.created_at ASC`.
+  - **Excluye propuestas sin ninguna imagen asociada** (`LEFT JOIN product_images WHERE product_images.id IS NOT NULL`); estas propuestas deben ser corregidas antes de entrar en cola (FR-016).
+  - Ordenación: `PublicationDraft.status = 'modified_pending_reapproval'` primero, luego `AIProposal.created_at ASC`. Entre propuestas del mismo estado, ordenar por `updated_at ASC` para priorizar las más antiguas.
   - La respuesta incluye el campo `locked_by_me: bool` (true si el lock activo pertenece a la session_id del solicitante).
 
 ---
