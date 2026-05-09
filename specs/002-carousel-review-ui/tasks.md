@@ -225,3 +225,63 @@ T045 ∥ T046 ∥ T047 ∥ T048 ∥ T049 ∥ T050 ∥ T051 ∥ T052 ∥ T053 ∥
 2. Sprint 2: US1 + US2 (T008–T027) — carrusel navegable
 3. Sprint 3: US3 + US4 (T028–T044) — decisiones completas
 4. Sprint 4: Polish (T045–T054)
+5. Sprint 5: Clarification backlog (T055–T062) — nuevos requisitos de la sesión de clarificación
+
+---
+
+## Phase 8: Clarification Backlog (nuevos requisitos FR-014, FR-016, FR-017, CQR-006)
+
+**Purpose**: Implementar los requisitos añadidos durante la sesión de clarificación del 2026-05-09 que no estaban cubiertos por T001–T054.
+
+**⚠️ NOTA**: FR-015 (excluir propuestas bloqueadas por otra sesión) ya está cubierto en T006. T047 cubre el avance automático en 409 pero no el toast específico. T016/T048 cubren casos relacionados de fotos pero no exactamente CQR-006.
+
+### FR-016 — Cola excluye propuestas sin imágenes
+
+- [ ] T055 Extender `backend/src/repositories/product_repository.py`: añadir `LEFT JOIN product_images` en `get_review_queue()` y filtrar `WHERE product_images.id IS NOT NULL` para excluir propuestas sin ninguna imagen asociada (FR-016)
+- [ ] T056 [P] Test de integración `backend/tests/integration/test_review_queue_endpoint.py` (extensión): propuesta sin `ProductImage` asociada → no aparece en `GET /api/v1/review-queue`; propuesta con imagen → sí aparece
+
+### FR-017 — Toast de conflicto con mensaje específico + avance automático
+
+- [ ] T057 Actualizar `frontend/src/hooks/useCarouselQueue.js`: cuando la respuesta HTTP sea 409 en `reviewProposal()`, mostrar toast no bloqueante con texto "Esta propuesta ya fue procesada" durante 3 s y llamar `advance()` automáticamente tras descartarlo (FR-017; refina T047 que solo cubre el endpoint de cola)
+- [ ] T058 [P] Test unitario `frontend/tests/useCarouselQueue.test.js` (extensión): `reviewProposal` devuelve 409 → toast con mensaje "Esta propuesta ya fue procesada" se muestra; `advance()` se llama automáticamente sin acción del operador
+
+### FR-014 — Acción pendiente en memoria + reintento automático al recuperar red
+
+- [ ] T059 Crear `frontend/src/hooks/useOfflineRetry.js`: detecta `window.addEventListener('online'/'offline')`; cuando se pierde la red muestra banner offline (indicador visual); almacena la última acción pendiente `{proposalId, payload}` en memoria (no localStorage); reintenta automáticamente al recuperar la conexión y limpia el estado pendiente tras éxito (FR-014)
+- [ ] T060 Conectar `useOfflineRetry` en `frontend/src/hooks/useCarouselQueue.js`: envolver `reviewProposal()` para que ante fallo de red (NetworkError/TypeError fetch) delegue en `useOfflineRetry` en lugar de mostrar error bloqueante
+- [ ] T061 [P] Test unitario `frontend/tests/useOfflineRetry.test.js`: simular evento `offline` → banner offline visible; simular evento `online` → reintento ejecutado; reintento exitoso → estado pendiente limpiado; reintento fallido por otra causa (4xx) → error bloqueante normal
+
+### CQR-006 — Visor limita a 10 fotos + indicador "N fotos más"
+
+- [ ] T062 [P] Actualizar `frontend/src/components/PhotoViewer.jsx`: si `images.length > 10`, renderizar solo las primeras 10 slides y añadir slide final con texto "X fotos más" (sin img tags adicionales); eliminar la lógica actual de "primeras 9 + miniaturas clicables" que no cumple exactamente CQR-006 (CQR-006, CQR-002)
+
+### Tests de regresión post-clarificación
+
+- [ ] T063 [P] Test unitario `frontend/tests/PhotoViewer.test.jsx` (extensión): con 11 fotos → muestra 10 slides + slide "1 foto más"; con 10 fotos → muestra 10 slides sin slide adicional; con 0 fotos → muestra placeholder
+
+---
+
+## Dependency Graph (actualizado con T055–T063)
+
+```
+[T001–T054 completados]
+        ↓
+T055 → T056 (FR-016: queue sin fotos)
+T057 → T058 (FR-017: toast conflicto)
+T059 → T060 → T061 (FR-014: offline retry)
+T062 → T063 (CQR-006: max 10 fotos)
+
+T055, T057, T059, T062 pueden ejecutarse en paralelo entre sí
+T060 depende de T059
+T056, T058, T061, T063 son tests de sus respectivas implementaciones
+```
+
+## Parallel Execution Examples (Sprint 5)
+
+```
+T055 ∥ T057 ∥ T059 ∥ T062   (implementaciones independientes)
+  ↓       ↓       ↓       ↓
+T056    T058    T060    T063  (tests y conexiones)
+                  ↓
+                T061
+```
