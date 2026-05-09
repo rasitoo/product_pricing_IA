@@ -9,10 +9,17 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@use-gesture/react": "^10.3.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-spring": "^10.0.3"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^29.1.1",
     "vite": "^5.4.10",
     "vitest": "^2.1.5"
   }
