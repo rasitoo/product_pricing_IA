@@ -1,7 +1,20 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from backend.src.api.dependencies.middleware import RequestContextMiddleware, unhandled_exception_handler
-from backend.src.api.v1 import channel_ingestion, exports, metrics, products, proposals, review_lock, review_queue, reviews
+from backend.src.api.v1 import (
+    channel_ingestion,
+    exports,
+    images,
+    metrics,
+    products,
+    proposals,
+    review_lock,
+    review_queue,
+    reviews,
+)
 from backend.src.config.database import init_db
 from backend.src.config.settings import get_settings
 
@@ -24,7 +37,13 @@ app = FastAPI(title=settings.app_name)
 app.add_middleware(RequestContextMiddleware)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
+# Serve uploaded product images as static files at /uploads/
+_uploads_dir = Path(settings.image_storage_path)
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+
 app.include_router(products.router, prefix=settings.api_prefix)
+app.include_router(images.router, prefix=settings.api_prefix)
 app.include_router(proposals.router, prefix=settings.api_prefix)
 app.include_router(reviews.router, prefix=settings.api_prefix)
 app.include_router(exports.router, prefix=settings.api_prefix)

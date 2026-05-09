@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ["LLM_STUB"] = "true"  # Always use stub in tests
 
 from backend.src.main import app  # noqa: E402
 
