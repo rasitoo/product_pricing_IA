@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, case, func
+from sqlalchemy import select, case, func, exists
 from sqlalchemy.orm import Session
 
 from backend.src.models.ai_proposal import AIProposal
@@ -46,6 +46,11 @@ class ProductRepository:
             ReviewLock.session_id != session_id,
         )
 
+        # Subquery: proposal_ids that have at least one image (FR-016)
+        has_image = select(ProductImage.product_id).where(
+            ProductImage.product_id == AIProposal.product_id
+        )
+
         # Count total available proposals
         count_stmt = (
             select(func.count())
@@ -53,6 +58,7 @@ class ProductRepository:
             .where(
                 AIProposal.status.in_(["in_review", "modified_pending_reapproval"]),
                 AIProposal.id.not_in(locked_by_others),
+                exists(has_image),
             )
         )
         total = self.db.scalar(count_stmt) or 0
@@ -69,6 +75,7 @@ class ProductRepository:
             .where(
                 AIProposal.status.in_(["in_review", "modified_pending_reapproval"]),
                 AIProposal.id.not_in(locked_by_others),
+                exists(has_image),
             )
             .order_by(priority, AIProposal.created_at)
             .limit(1)

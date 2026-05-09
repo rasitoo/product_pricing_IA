@@ -100,4 +100,35 @@ describe("useCarouselQueue", () => {
     expect(api.reviewProposal).not.toHaveBeenCalled();
     expect(api.unlockProposal).toHaveBeenCalledWith("prop-1");
   });
+
+  it("T058 — 409 from reviewProposal shows conflictToast and auto-advances after 3s", async () => {
+    vi.useFakeTimers();
+    api.fetchNextQueueItem.mockResolvedValue(MOCK_ITEM);
+    const conflictErr = new Error("review_failed");
+    conflictErr.status = 409;
+    api.reviewProposal.mockRejectedValue(conflictErr);
+
+    const { result } = renderHook(() => useCarouselQueue());
+    await act(async () => { await result.current.advance(); });
+
+    // Trigger confirmDecision which will hit the 409
+    await act(async () => {
+      await result.current.confirmDecision("approve");
+    });
+
+    // conflictToast should be visible
+    expect(result.current.conflictToast).toBe(true);
+    // reviewProposal was called once
+    expect(api.reviewProposal).toHaveBeenCalledWith("prop-1", { decision: "approve" });
+
+    // advance() should NOT have been called yet (advance happens after 3 s)
+    api.fetchNextQueueItem.mockResolvedValue(null);
+    await act(async () => { vi.advanceTimersByTime(3000); });
+
+    // After 3 s: toast dismissed and advance executed
+    expect(result.current.conflictToast).toBe(false);
+    expect(result.current.currentItem).toBeNull();
+
+    vi.useRealTimers();
+  });
 });

@@ -83,12 +83,13 @@ def test_modified_proposal_appears_first_in_queue(client):
     from sqlalchemy.orm import sessionmaker
     from backend.src.models.product import Product
     from backend.src.models.ai_proposal import AIProposal
+    from backend.src.models.product_image import ProductImage
     from sqlalchemy import select
 
     Session = sessionmaker(bind=engine)
     db = Session()
 
-    # Create two proposals: one normal, one modified
+    # Create two proposals: one normal, one modified — both WITH images (FR-016)
     p1 = Product(id=uuid.uuid4(), source_channel="api", status="in_review", tags={})
     db.add(p1)
     db.flush()
@@ -103,6 +104,12 @@ def test_modified_proposal_appears_first_in_queue(client):
         status="in_review",
     )
     db.add(normal)
+    db.flush()
+    db.add(ProductImage(
+        id=uuid.uuid4(), product_id=p1.id,
+        storage_uri=f"data/uploads/{p1.id}/a.jpg",
+        sha256_hash=uuid.uuid4().hex, mime_type="image/jpeg",
+    ))
 
     p2 = Product(id=uuid.uuid4(), source_channel="api", status="in_review", tags={})
     db.add(p2)
@@ -118,6 +125,12 @@ def test_modified_proposal_appears_first_in_queue(client):
         status="modified_pending_reapproval",
     )
     db.add(modified)
+    db.flush()
+    db.add(ProductImage(
+        id=uuid.uuid4(), product_id=p2.id,
+        storage_uri=f"data/uploads/{p2.id}/b.jpg",
+        sha256_hash=uuid.uuid4().hex, mime_type="image/jpeg",
+    ))
     db.commit()
     modified_id = str(modified.id)
     modified_uuid = modified.id

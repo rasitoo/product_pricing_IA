@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react";
 import { fetchNextQueueItem, reviewProposal, unlockProposal } from "../services/api.js";
+import { useOfflineRetry } from "./useOfflineRetry.js";
 
 /**
  * Manages the carousel queue state.
  * Returns: { currentItem, queueTotal, isLoading, error, advance, pendingDecision,
- *            confirmDecision, undoDecision, setPendingDecision }
+ *            confirmDecision, undoDecision, setPendingDecision, conflictToast, isOffline }
  */
 export function useCarouselQueue() {
   const [currentItem, setCurrentItem] = useState(null);
@@ -13,6 +14,10 @@ export function useCarouselQueue() {
   const [error, setError] = useState(null);
   // pendingDecision: { type: "approve"|"reject"|"edit", payload?: object } | null
   const [pendingDecision, setPendingDecision] = useState(null);
+  // conflictToast: shown when backend returns 409 on reviewProposal (FR-017)
+  const [conflictToast, setConflictToast] = useState(false);
+
+  const { isOffline, withOfflineRetry } = useOfflineRetry();
 
   const advance = useCallback(async () => {
     setIsLoading(true);
@@ -33,14 +38,29 @@ export function useCarouselQueue() {
     async (type, payload = {}) => {
       if (!currentItem) return;
       const proposalId = currentItem.proposal_id;
-      try {
-        await reviewProposal(proposalId, { decision: type, ...payload });
-      } catch (_) {
-        // Swallow: advance anyway so UI doesn't get stuck
-      }
-      await advance();
+
+      // Wrap the actual network call with offline-retry logic (FR-014)
+      const sendReview = withOfflineRetry(async () => {
+        try {
+          await reviewProposal(proposalId, { decision: type, ...payload });
+        } catch (err) {
+          if (err?.status === 409) {
+            // FR-017: show non-blocking toast and auto-advance after 3 s
+            setConflictToast(true);
+            setTimeout(() => {
+              setConflictToast(false);
+              advance();
+            }, 3000);
+            return; // handled — do not propagate
+          }
+          throw err; // let withOfflineRetry decide if it's a network error
+        }
+        await advance();
+      });
+
+      await sendReview();
     },
-    [currentItem, advance]
+    [currentItem, advance, withOfflineRetry]
   );
 
   const undoDecision = useCallback(async () => {
@@ -67,5 +87,7 @@ export function useCarouselQueue() {
     setPendingDecision,
     confirmDecision,
     undoDecision,
+    conflictToast,
+    isOffline,
   };
 }

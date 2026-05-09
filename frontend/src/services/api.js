@@ -21,7 +21,11 @@ export async function reviewProposal(proposalId, payload) {
     headers: sessionHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error("review_failed");
+  if (!response.ok) {
+    const err = new Error("review_failed");
+    err.status = response.status;
+    throw err;
+  }
   return response.json();
 }
 
