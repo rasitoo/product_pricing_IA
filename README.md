@@ -16,9 +16,10 @@ progresivo: local con Docker → cloud (AWS) en fases posteriores.
 5. [Observabilidad y control de costes](#5-observabilidad-y-control-de-costes)
 6. [Estructura del repositorio](#6-estructura-del-repositorio)
 7. [Arranque rápido](#7-arranque-rápido)
-8. [Tests](#8-tests)
-9. [Variables de entorno](#9-variables-de-entorno)
-10. [Notebook de demostración de la IA](#10-notebook-de-demostración-de-la-ia)
+8. [Pruebas en entorno real (Docker + web)](#8-pruebas-en-entorno-real-docker--web)
+9. [Tests automatizados](#9-tests-automatizados)
+10. [Variables de entorno](#10-variables-de-entorno)
+11. [Notebook de demostración de la IA](#11-notebook-de-demostración-de-la-ia)
 
 ---
 
@@ -355,7 +356,123 @@ La documentación interactiva de la API en `http://localhost:8000/docs`.
 
 ---
 
-## 8. Tests
+## 8. Pruebas en entorno real (Docker + web)
+
+Esta guía describe cómo levantar el stack completo en local (infraestructura real con
+Docker, backend y frontend) para hacer pruebas manuales de extremo a extremo.
+
+### Prerrequisitos
+
+- Docker Desktop instalado y en ejecución.
+- `uv` instalado (`pip install uv`).
+- Node.js 20+ y npm.
+
+### Paso 1 — Levantar infraestructura (PostgreSQL + Redis)
+
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d
+```
+
+Verifica que los dos contenedores están en estado `running`:
+
+```bash
+docker compose -f infra/docker/docker-compose.yml ps
+```
+
+### Paso 2 — Configurar variables de entorno
+
+Crea (o edita) `.env.local` con las variables mínimas apuntando a los contenedores:
+
+```env
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/pricing_db
+REDIS_URL=redis://localhost:6379/0
+OPENAI_API_KEY=sk-...          # Deja vacío o añade LLM_STUB=true para evitar costes
+LLM_STUB=true
+IMAGE_STORAGE_MODE=local
+IMAGE_STORAGE_PATH=data/uploads
+```
+
+### Paso 3 — Preparar entorno Python y ejecutar migraciones
+
+```bash
+uv sync
+
+# Aplica las migraciones de Alembic contra PostgreSQL
+uv run alembic upgrade head
+```
+
+### Paso 4 — Arrancar el backend
+
+```bash
+uv run uvicorn backend.src.main:app --reload --port 8000
+```
+
+Comprueba que el backend responde: `http://localhost:8000/docs`
+
+### Paso 5 — Arrancar el worker Celery (nueva terminal)
+
+```bash
+uv run celery -A backend.src.workers.celery_app worker --loglevel=info
+```
+
+### Paso 6 — Arrancar el frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+La interfaz de revisión estará disponible en `http://localhost:5173`.
+
+### Paso 7 — Flujo de prueba manual
+
+1. **Crear un producto** (via Swagger UI o curl):
+
+   ```bash
+   curl -X POST http://localhost:8000/api/v1/products \
+     -H "Content-Type: application/json" \
+     -d '{"source_channel": "api"}'
+   ```
+
+   Guarda el `product_id` devuelto.
+
+2. **Subir una imagen** (sustituye `<PRODUCT_ID>` y `<ruta/imagen.jpg>`):
+
+   ```bash
+   curl -X POST http://localhost:8000/api/v1/images/<PRODUCT_ID> \
+     -F "file=@<ruta/imagen.jpg>"
+   ```
+
+   El worker Celery recibirá la tarea, analizará la imagen con el pipeline de IA y
+   creará una propuesta en estado `in_review`.
+
+3. **Revisar la propuesta en el carrusel**: abre `http://localhost:5173` y aprueba,
+   rechaza o edita la propuesta generada. Comprueba el indicador de estado offline
+   desconectando y reconectando el WiFi.
+
+4. **Verificar la base de datos** (opcional):
+
+   ```bash
+   docker exec -it $(docker compose -f infra/docker/docker-compose.yml ps -q postgres) \
+     psql -U postgres -d pricing_db -c "SELECT id, status FROM ai_proposals ORDER BY created_at DESC LIMIT 5;"
+   ```
+
+### Paso 8 — Apagar el entorno
+
+```bash
+docker compose -f infra/docker/docker-compose.yml down
+```
+
+Para eliminar también los volúmenes (datos de PostgreSQL):
+
+```bash
+docker compose -f infra/docker/docker-compose.yml down -v
+```
+
+---
+
+## 9. Tests automatizados
 
 ```bash
 # Backend — todos los tests
@@ -365,7 +482,7 @@ uv run pytest backend/tests -q
 uv run pytest backend/tests/unit -q
 
 # Frontend
-cd frontend && npm test -- --run
+cd frontend && npx vitest run
 ```
 
 Los tests de integración usan `testcontainers` para levantar PostgreSQL y Redis
@@ -373,7 +490,7 @@ automáticamente; no requieren un Docker Compose activo por separado.
 
 ---
 
-## 9. Variables de entorno
+## 10. Variables de entorno
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
@@ -390,7 +507,7 @@ Las variables se leen desde `.env.local` (ignorado por git).
 
 ---
 
-## 10. Notebook de demostración de la IA
+## 11. Notebook de demostración de la IA
 
 El notebook [notebooks/ia-demo.ipynb](notebooks/ia-demo.ipynb) contiene una demostración
 interactiva del pipeline completo de IA **sin necesidad de base de datos ni de API key**

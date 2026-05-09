@@ -20,6 +20,15 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Override sqlalchemy.url from app settings (reads .env.local) if DATABASE_URL is set there
+try:
+    from backend.src.config.settings import get_settings as _get_settings
+    _db_url = _get_settings().database_url
+    if _db_url and _db_url != "sqlite:///./app.db":
+        config.set_main_option("sqlalchemy.url", _db_url)
+except Exception:
+    pass
+
 target_metadata = Base.metadata
 
 
