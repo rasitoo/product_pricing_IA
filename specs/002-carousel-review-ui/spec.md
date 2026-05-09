@@ -15,6 +15,14 @@
 - Q: ¿Cuánto tiempo debe durar el TTL del bloqueo optimista de una propuesta? → A: 60 segundos.
 - Q: ¿Qué estado final tiene una propuesta rechazada con modificaciones? → A: Pasa a estado "modificada, pendiente de reaprobación" y las correcciones se retroalimentan al sistema de IA para reentrenamiento.
 
+### Session 2026-05-09 (clarify run 2)
+
+- Q: ¿Qué ocurre si se pierde la conexión de red mientras el operador está revisando una propuesta? → A: La acción pendiente se mantiene en memoria y se reintenta automáticamente cuando la red se recupera; se muestra un indicador visual de estado offline.
+- Q: ¿Qué ve un segundo operador cuando intenta acceder a una propuesta ya bloqueada? → A: Las propuestas bloqueadas se omiten silenciosamente; el segundo operador recibe directamente la siguiente propuesta libre.
+- Q: ¿Qué sucede si una propuesta no tiene fotos asociadas? → A: Las propuestas sin fotos se eliminan de la cola; no aparecen para revisión.
+- Q: ¿Cómo se muestra una propuesta con un número muy elevado de fotos (>10)? → A: El visor muestra máximo 10 fotos; si hay más, se muestra un indicador "N fotos más" sin cargar el resto.
+- Q: ¿Qué ocurre si el operador intenta aceptar una propuesta que ya fue procesada por otro dispositivo? → A: El sistema muestra un aviso de conflicto ("esta propuesta ya fue procesada") y avanza automáticamente a la siguiente propuesta libre sin requerir acción del operador.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Revisar Propuesta sin Iniciar Sesión (Priority: P1)
@@ -86,11 +94,11 @@ Como operador de ventas, quiero rechazar el contenido generado —opcionalmente 
 
 ### Edge Cases
 
-- ¿Qué ocurre si se pierde la conexión de red mientras el operador está revisando una propuesta?
-- ¿Cómo se comporta el sistema si dos dispositivos/usuarios acceden a la misma cola simultáneamente y seleccionan la misma propuesta?
-- ¿Qué sucede si una propuesta no tiene fotos asociadas (solo texto generado)?
-- ¿Cómo se muestra una propuesta con un número muy elevado de fotos (>10)?
-- ¿Qué ocurre si el operador intenta aceptar una propuesta que ya fue procesada por otro dispositivo?
+- ~~¿Qué ocurre si se pierde la conexión de red mientras el operador está revisando una propuesta?~~ → Acción en memoria; reintento automático al recuperar red; indicador offline visible.
+- ~~¿Cómo se comporta el sistema si dos dispositivos/usuarios acceden a la misma cola simultáneamente y seleccionan la misma propuesta?~~ → Las propuestas bloqueadas se omiten silenciosamente de la cola del segundo operador, que recibe la siguiente libre.
+- ~~¿Qué sucede si una propuesta no tiene fotos asociadas (solo texto generado)?~~ → Las propuestas sin fotos se excluyen de la cola de revisión.
+- ~~¿Cómo se muestra una propuesta con un número muy elevado de fotos (>10)?~~ → El visor muestra máximo 10 fotos; si hay más, indicador "N fotos más" sin cargarlas.
+- ~~¿Qué ocurre si el operador intenta aceptar una propuesta que ya fue procesada por otro dispositivo?~~ → Aviso de conflicto no bloqueante; avance automático a la siguiente propuesta libre.
 
 ## Requirements *(mandatory)*
 
@@ -109,6 +117,10 @@ Como operador de ventas, quiero rechazar el contenido generado —opcionalmente 
 - **FR-011**: El sistema DEBE bloquear una propuesta para otras sesiones mientras está siendo revisada activamente, liberándola automáticamente si la sesión revisora se desconecta o no renueva el bloqueo en 60 segundos (bloqueo con TTL de 60 s).
 - **FR-012**: El sistema DEBE mostrar un mensaje claro cuando la cola de propuestas pendientes está vacía.
 - **FR-013**: Cuando el operador confirma modificaciones sobre una propuesta, el sistema DEBE enviar al backend las correcciones (campos modificados y sus valores) como señal de retroalimentación para el reentrenamiento del modelo de IA; la propuesta pasa a estado "modificada, pendiente de reaprobación" y vuelve al inicio de la cola.
+- **FR-014**: Cuando se detecte pérdida de conexión de red, el sistema DEBE mostrar un indicador visual de estado offline, mantener la última acción del operador en memoria y reintentarla automáticamente al recuperar la conexión sin requerir intervención manual.
+- **FR-015**: El endpoint de cola DEBE excluir de la respuesta las propuestas actualmente bloqueadas por otra sesión; el segundo operador no ve ni espera propuestas en revisión por otros, sino que recibe directamente la siguiente propuesta libre.
+- **FR-016**: El endpoint de cola DEBE excluir las propuestas que no tengan ninguna imagen asociada; dichas propuestas no aparecen para revisión y deben ser eliminadas o corregidas antes de entrar en la cola.
+- **FR-017**: Cuando el backend devuelva un error de conflicto (propuesta ya procesada por otra sesión), el frontend DEBE mostrar un aviso no bloqueante (toast/banner) con el mensaje "Esta propuesta ya fue procesada" y avanzar automáticamente a la siguiente propuesta libre sin requerir acción del operador.
 
 ### Cost & Quality Requirements *(mandatory para features con IA)*
 
@@ -117,6 +129,7 @@ Como operador de ventas, quiero rechazar el contenido generado —opcionalmente 
 - **CQR-003**: El manejo de imágenes DEBE evitar transferir imágenes en resolución completa innecesaria; se usarán miniaturas o versiones optimizadas para la vista de carrusel.
 - **CQR-004**: No se utilizan claves de API adicionales en el frontend; todas las llamadas al backend se realizan sin exponer secretos en el cliente.
 - **CQR-005**: La gestión del entorno y dependencias de backend usa `uv`; nuevas librerías se añaden con `uv add`.
+- **CQR-006**: El visor de fotos de la tarjeta del carrusel DEBE mostrar como máximo 10 imágenes; si la propuesta tiene más, se muestra un indicador del tipo "X fotos más" sin cargar ni renderizar las imágenes adicionales, para garantizar el tiempo de carga <2s (SC-005).
 
 ### Reproducibility & Documentation Artifacts *(mandatory para features con IA)*
 
