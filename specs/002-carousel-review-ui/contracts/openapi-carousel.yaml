@@ -1,0 +1,285 @@
+openapi: 3.1.0
+info:
+  title: Carousel Review UI — New & Extended Endpoints
+  version: 1.0.0
+  description: |
+    Nuevos endpoints y extensiones sobre la API v1 de la feature 001 requeridos
+    por la interfaz de revisión en carrusel (feature 002).
+    Los endpoints de la feature 001 no se repiten aquí; este contrato es incremental.
+servers:
+  - url: http://localhost:8000
+
+paths:
+
+  /api/v1/review-queue:
+    get:
+      summary: Obtener la siguiente propuesta pendiente de revisión
+      operationId: getNextReviewItem
+      description: |
+        Devuelve la primera propuesta pendiente de revisión para la sesión indicada.
+        Las propuestas en estado `modified_pending_reapproval` tienen prioridad sobre las `in_review`.
+        Si la propuesta ya tiene un lock activo de otra sesión, se omite y se devuelve la siguiente.
+      parameters:
+        - in: header
+          name: X-Session-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Identificador anónimo de sesión del navegador (UUID v4).
+      responses:
+        '200':
+          description: Propuesta disponible para revisión.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueItem'
+        '204':
+          description: Cola vacía — no hay propuestas pendientes.
+
+  /api/v1/proposals/{proposal_id}/lock:
+    post:
+      summary: Bloquear una propuesta para revisión exclusiva
+      operationId: lockProposal
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+        - in: header
+          name: X-Session-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Lock adquirido o renovado correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockResponse'
+        '409':
+          description: La propuesta ya está bloqueada por otra sesión activa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Propuesta no encontrada.
+
+    delete:
+      summary: Liberar el lock de una propuesta
+      operationId: unlockProposal
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+        - in: header
+          name: X-Session-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Lock liberado correctamente o ya no existía.
+        '403':
+          description: La sesión no es propietaria del lock activo.
+
+  /api/v1/proposals/{proposal_id}/lock/heartbeat:
+    post:
+      summary: Renovar el TTL del lock activo (heartbeat)
+      operationId: heartbeatProposalLock
+      description: El frontend llama a este endpoint cada 20 s para renovar el lock a 60 s.
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+        - in: header
+          name: X-Session-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: TTL renovado correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockResponse'
+        '404':
+          description: Lock no encontrado o ya expirado.
+
+  /api/v1/proposals/{proposal_id}/review:
+    post:
+      summary: Registrar decisión del operador sobre una propuesta (extendido)
+      operationId: reviewProposal
+      description: |
+        Extiende el contrato existente de la feature 001.
+        Nuevas reglas en feature 002:
+        - Si `decision = edit`, los campos `edited_description` y/o `edited_price` deben contener
+          al menos uno con valor distinto al original; el backend crea los registros `FeedbackSignal`.
+        - El backend libera el lock de la propuesta al registrar la revisión definitiva.
+        - Si `decision = edit`, `PublicationDraft.status` pasa a `modified_pending_reapproval`.
+        - Si `decision = approve`, `Product.status` pasa a `approved` y `PublicationDraft.status` a `ready`.
+        - Si `decision = reject` (sin edición), `Product.status` pasa a `rejected`.
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+        - in: header
+          name: X-Session-Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewIn'
+      responses:
+        '200':
+          description: Revisión registrada correctamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewOut'
+        '404':
+          description: Propuesta no encontrada.
+        '409':
+          description: La sesión no posee el lock activo sobre esta propuesta.
+        '422':
+          description: Validación fallida (ej. decision=edit sin campos editados).
+
+components:
+  parameters:
+    ProposalId:
+      name: proposal_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    ReviewQueueItem:
+      type: object
+      required: [proposal_id, product_id, description, suggested_price, images, queue_position, queue_total, locked_by_me]
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+          description: Descripción generada por la IA.
+        suggested_price:
+          type: number
+          format: float
+        suggested_price_min:
+          type: number
+          format: float
+          nullable: true
+        suggested_price_max:
+          type: number
+          format: float
+          nullable: true
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        images:
+          type: array
+          description: URLs de las imágenes del producto en orden de presentación.
+          items:
+            type: object
+            required: [url, thumbnail_url]
+            properties:
+              url:
+                type: string
+                format: uri
+                description: URL de la imagen en resolución completa.
+              thumbnail_url:
+                type: string
+                format: uri
+                description: URL de la miniatura (resolución optimizada para carrusel).
+        queue_position:
+          type: integer
+          description: Posición 1-based de esta propuesta en la cola actual.
+        queue_total:
+          type: integer
+          description: Total de propuestas pendientes en la cola (incluyendo la actual).
+        locked_by_me:
+          type: boolean
+          description: True si el lock activo pertenece a la sesión solicitante.
+        draft_status:
+          type: string
+          enum: [in_review, modified_pending_reapproval]
+          description: Estado actual del borrador de publicación.
+
+    LockResponse:
+      type: object
+      required: [proposal_id, session_id, expires_at]
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        locked_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    ReviewIn:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject, edit]
+        edited_description:
+          type: string
+          nullable: true
+          description: Requerido si decision=edit y se modifica la descripción.
+        edited_price:
+          type: number
+          format: float
+          nullable: true
+          description: Requerido si decision=edit y se modifica el precio.
+        reject_reason:
+          type: string
+          nullable: true
+          description: Motivo de rechazo (opcional para decision=reject o edit).
+
+    ReviewOut:
+      type: object
+      required: [review_id, proposal_id, decision, reviewed_at, next_status]
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+          enum: [approve, reject, edit]
+        reviewed_at:
+          type: string
+          format: date-time
+        next_status:
+          type: string
+          enum: [approved, rejected, modified_pending_reapproval]
+        feedback_signals_created:
+          type: integer
+          description: Número de registros FeedbackSignal creados (0 si decision != edit).
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
