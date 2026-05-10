@@ -40,16 +40,20 @@ class LLMClient:
     def _build_system_prompt(self, context: dict) -> str:
         lines = [
             "Eres un experto en valoración de productos de segunda mano para una plataforma de reventa en España.",
-            "Analiza las imágenes del producto y genera una descripción atractiva en español y un precio de venta sugerido en EUR.",
+            "Analiza las imágenes del producto y genera una descripción rica y precisa en español, además de un precio de venta sugerido en EUR.",
             "",
             "Responde ÚNICAMENTE con JSON válido (sin bloques markdown) con exactamente estos campos:",
             '{"description": "...", "suggested_price": 0.00, "confidence": 0.85, "product_keywords": ["..."]}',
             "",
             "Instrucciones:",
-            "- description: 2-3 frases en español, describen el producto, su estado y atractivo para el comprador",
+            "- description: 3-4 frases en español que identifiquen el producto, la marca, la talla o medida si aplica, su estado y por qué es atractivo para un comprador.",
+            "  Incluye tipo de producto, marca/talla cuando sean visibles o inferibles; si no se puede determinar, indica 'marca desconocida' o 'talla no especificada'.",
             "- suggested_price: precio realista de venta en EUR como número decimal",
             "- confidence: tu nivel de confianza en la valoración entre 0.0 y 1.0",
-            "- product_keywords: 3-5 palabras clave en español para buscar comparables de precio en internet",
+            "- product_keywords: 4-6 palabras clave específicas en español para buscar comparables de precio en internet.",
+            "  DEBE incluir: tipo de producto (ej: sudadera, camiseta, pantalón), material (ej: algodón, lana), marca si es visible, talla si aplica, y condición (ej: nueva, usada).",
+            "  Ejemplo: ['sudadera algodón', 'marca nudos', 'talla M', 'segunda mano']",
+            "- Si no existen suficientes comparables relevantes en la búsqueda web, no sobrevalores la propuesta; confía más en la estimación del LLM.",
         ]
 
         # Feedback signals: learn from human operator corrections
@@ -173,7 +177,20 @@ class ExternalComparableClient:
         except ImportError:
             from duckduckgo_search import DDGS  # type: ignore[no-redef]
 
-        search_query = f"{query} precio comprar segunda mano"
+        # Build structured search query from keywords
+        # Try to extract brand, product type, size from keywords for better searches
+        keywords_lower = query.lower().split()
+        
+        # First try: specific structured query with all keywords
+        search_query = f"{query} precio segunda mano"
+        
+        # If we detect size indicators (S, M, L, XL, talla, tamaño), prioritize them
+        size_keywords = {"s", "m", "l", "xl", "xxl", "xs", "talla", "tamaño"}
+        has_size = any(kw in keywords_lower for kw in size_keywords)
+        
+        if has_size or "talla" in query.lower():
+            search_query = f"{query} -tienda -nuevo EUR"
+        
         results: list[dict] = []
 
         # DDGS is sync; run in threadpool via asyncio.to_thread
@@ -181,10 +198,11 @@ class ExternalComparableClient:
 
         def _sync_search() -> list[dict]:
             ddg = DDGS()
-            return list(ddg.text(search_query, max_results=15))
+            return list(ddg.text(search_query, max_results=20))
 
         raw_results = await asyncio.to_thread(_sync_search)
 
+        # Parse results with improved extraction
         for item in raw_results:
             snippet = (item.get("body") or "") + " " + (item.get("title") or "")
             prices_found = self._PRICE_RE.findall(snippet)

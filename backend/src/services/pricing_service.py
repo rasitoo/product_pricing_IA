@@ -41,14 +41,24 @@ class PricingService:
             for h in ctx.get("historical_refs", [])
             if h.get("sold_price")
         ]
-        all_external = market_prices + hist_prices
 
-        if all_external:
+        use_market = len(market_prices) >= 2
+        avg_external = llm.suggested_price
+        suggested = round(llm.suggested_price, 2)
+        external_sources_used = []
+
+        if use_market:
+            all_external = market_prices + hist_prices
             avg_external = sum(all_external) / len(all_external)
             suggested = round(llm.suggested_price * 0.6 + avg_external * 0.4, 2)
-        else:
-            avg_external = llm.suggested_price
-            suggested = round(llm.suggested_price, 2)
+            external_sources_used = web_comps[:5]
+
+        # Step 4: Calculate IA cost (GPT-4o vision: ~$0.005/image + ~$0.002/text completion)
+        num_photos = len(photos)
+        cost_per_image = 0.005  # USD
+        cost_per_text = 0.002   # USD
+        ai_cost_usd = num_photos * cost_per_image + cost_per_text
+        ai_cost_eur = round(ai_cost_usd * 0.92, 4)  # Approximate EUR rate
 
         return {
             "description": llm.description,
@@ -64,7 +74,14 @@ class PricingService:
             },
             "rationale_external": {
                 "avg_market_price": round(avg_external, 2),
+                "market_used": use_market,
                 "web_sources_found": len(market_prices),
-                "sources": web_comps[:5],
+                "sources": external_sources_used,
+            },
+            "ai_cost": {
+                "num_photos": num_photos,
+                "cost_usd": round(ai_cost_usd, 4),
+                "cost_eur": ai_cost_eur,
+                "breakdown": f"${cost_per_image:.3f} × {num_photos} fotos + ${cost_per_text:.3f}/texto",
             },
         }
