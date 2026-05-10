@@ -89,7 +89,7 @@ def process_product(product_id: str, photos: list[dict]) -> str:
             confidence_score=proposal_data["confidence_score"],
             rationale_internal=proposal_data["rationale_internal"],
             rationale_external=proposal_data["rationale_external"],
-            status="proposed",
+            status="in_review",
         )
         db.add(proposal)
 
